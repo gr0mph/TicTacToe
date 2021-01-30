@@ -6,6 +6,8 @@ import numpy as np
 DRAW, NEITHER, MINE, OPP = -2 , -1 , 0 , 1
 TYPE_TURN = { -2 : 'D' , -1 : 'N'  , 0 : 'M' , 1 : 'O' }
 
+FUZZY_MINMAX = { -2 : 'LOSS' , 0 : 'NEUTRAL' , 2 : 'WIN' }
+
 NB_RAND_FIRST = 80
 NB_RAND_AFTER = 60 #78
 
@@ -72,20 +74,10 @@ def victory_check3( obj , owner ):
 
     return DRAW
 
-def coord_upAndLeft( inrow , incol ):
-    row = ( inrow // 3 ) * 3
-    col = ( incol // 3 ) * 3
-    return ( row , col )
-
 def coord_pToIndex( inrow , incol ):
     ind1 = (inrow // 3) * 3 + (incol // 3)
     ind2 = (inrow % 3) * 3 + (incol % 3)
     return ( ind1 , ind2 )
-
-def coord_indexToP( inind1 , inind2 ):
-    row = (inind1 // 3) * 3 + (ind2 // 3)
-    col = (ind1 % 3) * 3 + (ind2 % 3)
-    return ( row , col )
 
 class TicTacToe():
 
@@ -126,20 +118,20 @@ class TicTacToe():
                 out3 = f'{out3} {TYPE_STR3[_]}'
 
             for ind1 in range( 3 * row , 3 * row + 3 ):
-                #if self._secret[ind1] == NEITHER or self._secret[ind1] == DRAW :
-                for ind2 in range(0,3):
-                    _ = self._state[ (ind1, ind2) ]
-                    out1 = f'{out1} {SIMPLEST_STR[_]}'
-                for ind2 in range(3,6):
-                    _ = self._state[ (ind1, ind2) ]
-                    out2 = f'{out2} {SIMPLEST_STR[_]}'
-                for ind2 in range(6,9):
-                    _ = self._state[ (ind1, ind2) ]
-                    out3 = f'{out3} {SIMPLEST_STR[_]}'
-                #else :
-                #   out1 = f'{out1} {TYPE_STR1[NEITHER]}'
-                #   out2 = f'{out2} {TYPE_STR2[NEITHER]}'
-                #   out3 = f'{out3} {TYPE_STR3[NEITHER]}'
+                if self._secret[ind1] == NEITHER or self._secret[ind1] == DRAW :
+                    for ind2 in range(0,3):
+                        _ = self._state[ (ind1, ind2) ]
+                        out1 = f'{out1} {SIMPLEST_STR[_]}'
+                    for ind2 in range(3,6):
+                        _ = self._state[ (ind1, ind2) ]
+                        out2 = f'{out2} {SIMPLEST_STR[_]}'
+                    for ind2 in range(6,9):
+                        _ = self._state[ (ind1, ind2) ]
+                        out3 = f'{out3} {SIMPLEST_STR[_]}'
+                else :
+                    out1 = f'{out1} {TYPE_STR1[NEITHER]}'
+                    out2 = f'{out2} {TYPE_STR2[NEITHER]}'
+                    out3 = f'{out3} {TYPE_STR3[NEITHER]}'
 
             out = f'{out}\n{out1}\n{out2}\n{out3}'
 
@@ -157,16 +149,6 @@ class TicTacToe():
         del self._mine[ ( ind1 , ind2 ) ]
         self._first = ind2
 
-        #   HAS BEEN ALREADY GAINED
-        #if self._secret[ ind1 ] != NEITHER :
-        #    s1 = frozenset([
-        #        ( ind1 ,0),( ind1 ,1),( ind1 ,2),( ind1 ,3),( ind1 ,4),
-        #        ( ind1 ,5),( ind1 ,6),( ind1 ,7),( ind1 ,8)])
-
-        #   s1 = s1.intersection(self._mine)
-        #    for _ in s1 :   del self._mine[_]
-        #    return
-
         #   MARK
         self._state[ ( ind1 , ind2 ) ] = owner
 
@@ -183,21 +165,13 @@ class TicTacToe():
 
             self._over = victory_check3 ( self._secret , owner )
 
-            #return _
-
         return _
-
-    def is_game_over( self , ind1 ):
-
-        #if self._secret[ind1] == NEITHER and len(self.possibility(MINE)) == 0 :
-        #    return OPP
-
-        return self._secret[ind1]
 
     def possibility( self , own , ind2 ):
 
         _ = ind2
 
+        #   TODO: Simplify
         s1 = frozenset([(_,0),(_,1),(_,2),(_,3),(_,4),(_,5),(_,6),(_,7),(_,8)])
 
         s1 = s1.intersection(self._mine)
@@ -231,7 +205,12 @@ def mcts_generate( mcts_parent , n1 ):
     ochild1._state._predict.append( n1 )
     ochild1._state.update( n1.row , n1.col , MINE )
 
-    status_mine = victory_check2( ochild1._state._state , n1.ind1 , MINE )
+    #   ADD MIN MAX
+    if ochild1._state._secret[n1.ind1] == MINE :
+        if ochild1._state._over == MINE :
+            ochild1._min_max = 2
+        else :
+            ochild1._min_max = 1
 
     s1 = frozenset([(n1.ind2,0),(n1.ind2,1),(n1.ind2,2),(n1.ind2,3),(n1.ind2,4),(n1.ind2,5),(n1.ind2,6),(n1.ind2,7),(n1.ind2,8)])
 
@@ -241,6 +220,7 @@ def mcts_generate( mcts_parent , n1 ):
     if len(s1) == 0 :
         s1 = list(ochild1._state._mine.keys())
 
+    #   LAST CASE
     if len(s1) == 0 :
         childs.append( ochild1 )
 
@@ -250,29 +230,30 @@ def mcts_generate( mcts_parent , n1 ):
         m1 = ochild1._state._mine[k1]
         child._state.update( m1.row , m1.col , OPP )
 
-        if status_opp != OPP :
-            status_opp = victory_check2( child._state._state , m1.ind1 , OPP )
+        if child._state._secret[m1.ind1] == OPP :
+            if child._state._over == OPP :
+                child._min_max = -2
+            else :
+                child._min_max = ochild1._min_max - 1
 
         childs.append(child)
 
-
-    return status_mine , status_opp , childs
+    return childs
 
 class MonteCarloTreeSearch():
 
     def __init__(self,clone):
+        self._children = []
+        self._result = [ 0 , 0 ]
+        self._min_max = 0
+
         if clone is not None:
             self._parent = clone
-            self._children = []
             clone._children.append(self)
-            self._result = [ 0 , 0 ]
-
             self._state = TicTacToe(clone._state)
+
         else:
             self._parent = None
-            self._children = []
-            self._result = [ 0 , 0 ]
-
             self._state = None
 
     @property
@@ -301,29 +282,13 @@ class MonteCarloTreeSearch():
         if len(self._children) == 0 :
 
             childs = []
-            lost = []
             wins = []
 
             for _ in s1:
 
                 n1 = self._state._mine[_]
 
-                m1, o1 , c1 =  mcts_generate( self , n1 )
-
-                if m1 != MINE and o1 != OPP :
-                    childs.extend( c1 )
-
-                elif m1 == MINE and o1 != OPP :
-                    childs == []
-                    childs.extend( c1 )
-                    break
-
-                elif m1 != MINE and o1 == OPP :
-                    lost.extend( c1 )
-                    continue
-
-                elif m1 == MINE and o1 == OPP :
-                    childs.extend( c1 )
+                childs.extend( mcts_generate( self , n1 ) )
 
             self._children = []
             if len(childs) > 0 :
@@ -346,21 +311,7 @@ class MonteCarloTreeSearch():
 
                 n1 = self._state._mine
 
-                m1, o1 , c1 =  mcts_generate( self , n1 )
-
-                if m1 != MINE and o1 != OPP :
-                    childs.extend( c1 )
-
-                elif m1 == MINE and o1 != OPP :
-                    childs == []
-                    childs.extend( c1 )
-                    break
-
-                elif m1 != MINE and o1 == OPP :
-                    continue
-
-                elif m1 == MINE and o1 == OPP :
-                    childs.extend( c1 )
+                childs.extend( mcts_generate( self , n1 ) )
 
             self._children = []
 
@@ -425,12 +376,6 @@ class MonteCarloTreeSearch():
             rollout_state.update( sel_row , sel_col , ROLLOUT_TURN )
 
             ROLLOUT_TURN = MINE if ROLLOUT_TURN == OPP else OPP
-
-        #if rollout_state._over == MINE :
-
-            #print('RANDOM SEQ', file=sys.stderr)
-            #print(rollout_state, file=sys.stderr)
-            #print(f'PREDICT : {list(map(str,rollout_state._predict))}',file=sys.stderr)
 
         return [ 1 , 1 ] if rollout_state._over == MINE else [ 0 , 1 ]
 
@@ -524,7 +469,6 @@ if __name__ == '__main__':
         __children__ = __children__.expand_turns()
 
         _ = __children__.randomseq( turn1 )
-
 
         __children__.backpropagate( _ )
 
