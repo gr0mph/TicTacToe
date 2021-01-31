@@ -6,15 +6,13 @@ import numpy as np
 DRAW, NEITHER, MINE, OPP = -2 , -1 , 0 , 1
 TYPE_TURN = { -2 : 'D' , -1 : 'N'  , 0 : 'M' , 1 : 'O' }
 
-FUZZY_MINMAX = { -2 : 'LOSS' , 0 : 'NEUTRAL' , 2 : 'WIN' }
+FIRST_TURN = {
+    0 : [ 0 ] , 1 : [ 3 , 5 , 7 ] , 2 : [ 2 ] ,
+    3 : [ 1 , 5 , 7 ] , 4 : [ 4 ] , 5 : [ 1 , 3 , 7 ] ,
+    6 : [ 6 ] , 7 : [ 1 , 3 , 5 ] , 8 : [ 8 ] }
 
-NB_RAND_FIRST = 80
-NB_RAND_AFTER = 60 #78
-
-NB_TTT_ONE = 1
-NB_TTT_MORE = 2
-NB_TTT_FEW = 3
-NB_TTT_TURN1 = 0
+NB_RAND_FIRST = 700 #1000
+NB_RAND_AFTER = 30 #78
 
 t_str = lambda obj : f'{str(obj)} {TYPE_TURN[obj]}'
 
@@ -118,20 +116,20 @@ class TicTacToe():
                 out3 = f'{out3} {TYPE_STR3[_]}'
 
             for ind1 in range( 3 * row , 3 * row + 3 ):
-                if self._secret[ind1] == NEITHER or self._secret[ind1] == DRAW :
-                    for ind2 in range(0,3):
-                        _ = self._state[ (ind1, ind2) ]
-                        out1 = f'{out1} {SIMPLEST_STR[_]}'
-                    for ind2 in range(3,6):
-                        _ = self._state[ (ind1, ind2) ]
-                        out2 = f'{out2} {SIMPLEST_STR[_]}'
-                    for ind2 in range(6,9):
-                        _ = self._state[ (ind1, ind2) ]
-                        out3 = f'{out3} {SIMPLEST_STR[_]}'
-                else :
-                    out1 = f'{out1} {TYPE_STR1[NEITHER]}'
-                    out2 = f'{out2} {TYPE_STR2[NEITHER]}'
-                    out3 = f'{out3} {TYPE_STR3[NEITHER]}'
+                #if self._secret[ind1] == NEITHER or self._secret[ind1] == DRAW :
+                for ind2 in range(0,3):
+                    _ = self._state[ (ind1, ind2) ]
+                    out1 = f'{out1} {SIMPLEST_STR[_]}'
+                for ind2 in range(3,6):
+                    _ = self._state[ (ind1, ind2) ]
+                    out2 = f'{out2} {SIMPLEST_STR[_]}'
+                for ind2 in range(6,9):
+                    _ = self._state[ (ind1, ind2) ]
+                    out3 = f'{out3} {SIMPLEST_STR[_]}'
+                #else :
+                #out1 = f'{out1} {TYPE_STR1[NEITHER]}'
+                #out2 = f'{out2} {TYPE_STR2[NEITHER]}'
+                #out3 = f'{out3} {TYPE_STR3[NEITHER]}'
 
             out = f'{out}\n{out1}\n{out2}\n{out3}'
 
@@ -207,10 +205,14 @@ def mcts_generate( mcts_parent , n1 ):
 
     #   ADD MIN MAX
     if ochild1._state._secret[n1.ind1] == MINE :
+
         if ochild1._state._over == MINE :
-            ochild1._min_max = 2
+            ochild1._min_max = 0
         else :
-            ochild1._min_max = 1
+            ochild1._min_max = ochild1._min_max - 1
+
+        #print('MCTS GENERATE MINE',file=sys.stderr)
+        #print(ochild1._state,file=sys.stderr)
 
     s1 = frozenset([(n1.ind2,0),(n1.ind2,1),(n1.ind2,2),(n1.ind2,3),(n1.ind2,4),(n1.ind2,5),(n1.ind2,6),(n1.ind2,7),(n1.ind2,8)])
 
@@ -224,6 +226,7 @@ def mcts_generate( mcts_parent , n1 ):
     if len(s1) == 0 :
         childs.append( ochild1 )
 
+    max_choice_found = []
     for k1 in s1:
 
         child = MonteCarloTreeSearch( ochild1 )
@@ -231,12 +234,21 @@ def mcts_generate( mcts_parent , n1 ):
         child._state.update( m1.row , m1.col , OPP )
 
         if child._state._secret[m1.ind1] == OPP :
-            if child._state._over == OPP :
-                child._min_max = -2
-            else :
-                child._min_max = ochild1._min_max - 1
+
+            max_choice_found.append( child )
+
+            #if child._state._over == OPP :
+            #    child._min_max = 0
+            #else :
+            #    child._min_max = child._min_max - 1
 
         childs.append(child)
+
+    if len(max_choice_found) > 0 :
+
+        for c1 in childs :
+            if c1 not in max_choice_found :
+                c1._result = [ 0, 10 ]
 
     return childs
 
@@ -245,16 +257,17 @@ class MonteCarloTreeSearch():
     def __init__(self,clone):
         self._children = []
         self._result = [ 0 , 0 ]
-        self._min_max = 0
 
         if clone is not None:
             self._parent = clone
             clone._children.append(self)
             self._state = TicTacToe(clone._state)
+            self._min_max = clone._min_max
 
         else:
             self._parent = None
             self._state = None
+            self._min_max = 9
 
     @property
     def n(self):
@@ -267,22 +280,34 @@ class MonteCarloTreeSearch():
     #def generate( self , first ):
     def generate( self ):
 
-        if self._state._first != -1 :
+        if self._state._secret[ self._state._first ] != NEITHER :
+
+            s1 = list( self._state._mine.keys() )
+
+        else :
+
             _ = self._state._first
 
             s1 = frozenset([(_,0),(_,1),(_,2),(_,3),(_,4),(_,5),(_,6),(_,7),(_,8)])
 
             s1 = s1.intersection(self._state._mine)
 
-        else :
+            #   BEST CHOICE
+            if len(s1) == 9 :
 
-            s1 = list( self._state._mine.keys() )
+                t1 = FIRST_TURN[ _ ]
+                s2 = []
+
+                for i1 in t1 :
+
+                    s2.append( ( _ , i1 ) )
+
+                s1 = s1.intersection( s2 )
 
 
         if len(self._children) == 0 :
 
             childs = []
-            wins = []
 
             for _ in s1:
 
@@ -291,15 +316,11 @@ class MonteCarloTreeSearch():
                 childs.extend( mcts_generate( self , n1 ) )
 
             self._children = []
-            if len(childs) > 0 :
-                self._children.extend(childs)
-            elif len(lost) > 0 :
-                self._children.extend(lost)
+            self._children.extend(childs)
 
         else :
 
             childs = []
-            lost = []
 
             for m1 in self._children :
                 n1 = m1._state._predict[0]
@@ -314,11 +335,7 @@ class MonteCarloTreeSearch():
                 childs.extend( mcts_generate( self , n1 ) )
 
             self._children = []
-
-            if len(childs) > 0 :
-                self._children.extend(childs)
-            elif len(lost) > 0 :
-                self._children.extend(lost)
+            self._children.extend(childs)
 
     def best_child( self, c_parameter ):
         #  Upper Confidence Bounds (UCB1) formula
@@ -326,16 +343,44 @@ class MonteCarloTreeSearch():
 
         while len(_._children) > 0 :
 
-            check = sum( [ 1 for c in _._children if c.n == 0 ])
+            children, minmax, find = [] , 0 , False #   0 --> OVER, 9 --> START GAME
+            isexpand = False
 
-            if check > 0 : return _
+            while minmax < 10 :
+                for c1 in _._children :
+
+                    if c1._min_max == minmax :
+                        children.append( c1 )
+                        find = True
+
+                    if c1.n == 0 :
+                        isexpand = True
+
+                if find == True :
+                    break
+
+                minmax = minmax + 1
+
+            if isexpand == True :
+                return _
 
             weight = [
                 (c.w / c.n) + c_parameter * math.sqrt( (2 * math.log2(_.n) / c.n ) )
-                for c in _._children
+                for c in children
             ]
 
-            _ = _._children[ np.argmax( weight ) ]
+            _ = children[ np.argmax( weight ) ]
+
+            #check = sum( [ 1 for c in _._children if c.n == 0 ])
+
+            #if check > 0 : return _
+
+            #weight = [
+            #    (c.w / c.n) + c_parameter * math.sqrt( (2 * math.log2(_.n) / c.n ) )
+            #    for c in _._children
+            #]
+
+            #_ = _._children[ np.argmax( weight ) ]
 
         return _
 
@@ -348,17 +393,49 @@ class MonteCarloTreeSearch():
         if len(self._children) == 0 :
             self.generate( )
 
-        childs = [c for c in self._children if c.n == 0 ]
+        #childs = [c for c in self._children if c.n == 0 ]
+        #return childs[0]
 
-        if len(childs) == 0 :
-            self._state._first = -1
-            self.generate()
-            childs = [c for c in self._children if c.n == 0 ]
+        children, minmax, find = [] , 0 , False #   0 --> OVER, 9 --> START GAME
+        isexpand = False
+
+        while minmax < 10 :
+
+            for c1 in self._children :
+
+                if c1._min_max == minmax and c1.n == 0 :
+
+                    children.append( c1 )
+                    find = True
+
+            if find == True :
+                break
+
+            minmax = minmax + 1
+
+        if len(children) == 0 :
+
+            print('DEBUG >>> EXPAND',file=sys.stderr)
+
+            for c1 in self._children :
+
+                if c1._state._over == MINE :
+                    print(c1._state,file=sys.stderr)
+                    return c1
+
+
+        #print('DEBUG >>> EXPAND',file=sys.stderr)
+        #print(children[0]._state,file=sys.stderr)
+        return children[0]
+        #if len(childs) == 0 :
+        #    self._state._first = -1
+        #    self.generate()
+        #    childs = [c for c in self._children if c.n == 0 ]
 
         #   RANDOM CAN BE ADD
-        return childs[0]
 
-    def randomseq( self , ind1 ):
+
+    def randomseq( self ):
         TURN = 80
         ROLLOUT_TURN = MINE
         rollout_state = TicTacToe(self._state)
@@ -432,31 +509,11 @@ if __name__ == '__main__':
     #   FIRST TURN
     _ = [int(i) for i in input().split()] + [OPP]
     if _[0] != -1 :
-        state = NB_TTT_ONE
         __mine__.update( _[0] , _[1] , _[2] )
-    else :
-        state = NB_TTT_TURN1
 
     #   POSSIBILITY
-    check = [ 0 ] * 9
-    first_generation = {}
     for i in range(int(input())):
-
         _ = [int(j) for j in input().split()]
-        ind1 , ind2 = coord_pToIndex( _[0] , _[1] )
-        check[ ind1 ] = check[ ind1 ] + 1
-        first_generation[ (ind1,ind2) ] = __mine__action__[ (ind1,ind2)]
-
-    #   FIRST TURN TIC-TAC-TOE
-    if state == NB_TTT_TURN1 :
-        _ = {}
-        _[ (4 , 4) ] = first_generation[ (4 , 4) ]
-        first_generation = _
-        turn1 = 4
-
-    else :
-        state = NB_TTT_ONE
-        turn1 = np.argmax( check )
 
     # MONTE-CARLO TREE SEARCH INITIALIZATION
     __mine__mcts__ = MonteCarloTreeSearch(None)
@@ -468,7 +525,7 @@ if __name__ == '__main__':
 
         __children__ = __children__.expand_turns()
 
-        _ = __children__.randomseq( turn1 )
+        _ = __children__.randomseq()
 
         __children__.backpropagate( _ )
 
@@ -483,7 +540,6 @@ if __name__ == '__main__':
     # AFTER FIRST TURN
     while True:
         #   OPPONENT ACTION
-        print(f'BEFORE PREDICT >>> {list(map(str,__mine__mcts__._state._predict))}',file=sys.stderr)
         _ = [_.row] + [_.col] + [int(i) for i in input().split()]
 
         #   UPDATE
@@ -491,20 +547,10 @@ if __name__ == '__main__':
         __mine__mcts__.predict_update()
 
         print(__mine__mcts__._state,file=sys.stderr)
-        print(f'MINE >>> {list(map(str,__mine__mcts__._state._mine))}',file=sys.stderr)
-        print(f'UPDATE PREDICT >>> {list(map(str,__mine__mcts__._state._predict))}',file=sys.stderr)
 
         #   POSSIBILITY
-        check = [ 0 ] * 9
-        state = NB_TTT_TURN1
-
-        first_generation = {}
         for i in range(int(input())):
-
             _ = [int(j) for j in input().split()]
-            ind1 , ind2 = coord_pToIndex( _[0] , _[1] )
-            check[ ind1 ] = check[ ind1 ] + 1
-            first_generation[ (ind1,ind2) ] = __mine__action__[ (ind1,ind2)]
 
         #   CHECK LEN
         #   ONE OR MORE TIC-TAC-TOE
@@ -517,7 +563,7 @@ if __name__ == '__main__':
 
             __children__ = __children__.expand_turns()
 
-            _ = __children__.randomseq( np.argmax( check ) )
+            _ = __children__.randomseq()
 
             __children__.backpropagate( _ )
 
@@ -528,7 +574,6 @@ if __name__ == '__main__':
                 _.append( c )
 
         #   NEW TURN >>> BEST CHILD
-        #_ = np.argmax( [ c.w / c.n for c in __mine__mcts__._children ] )
         _ = np.argmax( [ c.w / c.n for c in _ ] )
 
         _ = __mine__mcts__._children[ _ ]
