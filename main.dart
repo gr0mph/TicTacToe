@@ -10,6 +10,7 @@ String read() {
 final int kNONE = 0 , kMINE = 1 , kOPP = 2 , kNEVER = 3;
 final int kCG = 0 , kDEBUG = 1;
 final int kTIME_START = 800 , kTIME_TURN = 80;
+final int kLIMIT_START = 999 , kLIMIT_TURN = 99;
 final Board k_ = new Board();
 final int console = kDEBUG;
 final List<String> kWIN = [ "NONE" , "MINE" , "OPPONENT" , "GAME OVER"];
@@ -29,6 +30,7 @@ final List<List<List<int>>> kLINE = [
 
 Stopwatch stopwatch = new Stopwatch();
 int rtTime = kTIME_START;
+int rtLimit = kLIMIT_START;
 
 void display(List<int> c , List<int> t , List<int> r)
 {
@@ -153,12 +155,6 @@ class UTTT
 
         this.cell[c] = isMine;
         this.rest[upper]--;
-        if( this.rest[upper] < 0 )
-        {
-            print("cell $c isMine $isMine");
-            error(this);
-            exit(0);
-        }
 
         if( this.rest[upper] == 0 ) this.ttt[upper] = kNEVER;
 
@@ -166,7 +162,6 @@ class UTTT
 
         isOver( upper , kLINE[upper] , isMine );
 
-        error("play >>>> is over ${this.over} ${kWIN[this.over]} ${this.rest}");
     }
 
     List<int> validAction(int c , int isMine )
@@ -188,8 +183,6 @@ class UTTT
                     r.add(modulo * 9 + i);
             }
         }
-
-        error("validAction ${this.rest} modulo ${c % 9} length ${r.length} $c $isMine LIST : ${r}");
         return r;
     }
 }
@@ -232,10 +225,19 @@ class MCTS
     @override
     String toString() {
         display( this.info.cell , this.info.ttt , this.info.rest );
+        for( final rowChild in this.child )
+        {
+            stderr.write("${rowChild[0].i1}: w ${this.w1[rowChild[0].i1]} n ${this.n1[rowChild[0].i1]} l ${rowChild.length} ");
+            for( final c in rowChild)
+                stderr.write("[ ${c.playedMine} ${c.playedOpp} ]");
+            error("");
+        }
+        error("");
+
         if( playedMine >= 0 && playedOpp >= 0 )
-            return "${this.info.over} isOver $i1 $i2 $playedMine [y:${k_.y[playedMine]},x:${k_.x[playedMine]}] $playedOpp [y:${k_.y[playedOpp]},x:${k_.x[playedOpp]},] \n$w1 \n$n1";
+            return "OVER : ${kWIN[this.info.over]} $i1 $i2 $playedMine [y:${k_.y[playedMine]},x:${k_.x[playedMine]}] $playedOpp [y:${k_.y[playedOpp]},x:${k_.x[playedOpp]},] \n$w1 \n$n1";
         else
-            return "${this.info.over} isOver $i1 $i2 $playedMine $playedOpp \n$w1 \n$n1";
+            return "OVER : ${kWIN[this.info.over]} $i1 $i2 $playedMine $playedOpp \n$w1 \n$n1";
     }
 
     MCTS selection( double c )
@@ -248,8 +250,7 @@ class MCTS
             //  Check Time
             if( stopwatch.elapsedMilliseconds >= rtTime )
             {
-                error("STOPWATCH SELECTION >> Nb Roll $nbRoll MCTS Done ${stopwatch.elapsedMilliseconds}");
-                error( _ );
+                error("SELECTION TIME LIMIT EXCEED ON CALL ${stopwatch.elapsedMilliseconds}");
                 return _;
             }
 
@@ -269,22 +270,6 @@ class MCTS
                 }
             }
 
-            if( _.child[iMax].length == 0 )
-            {
-                error("ERROR child[iMax] Length NULL $iMax ${_.nextMine} choosed ${_.nextMine[iMax]}");
-                error(_);
-                int i = 0;
-                for( final rowChild in _.child )
-                {
-                    if( rowChild.length == 0 )
-                    {
-                        error("$i newLine ${_.nextMine[i]}");
-
-                    }
-                    i++;
-                }
-            }
-
             i2 = Random().nextInt( _.child[iMax].length );
             _ = _.child[iMax][i2];
         }
@@ -296,10 +281,11 @@ class MCTS
         MCTS _ = this;
         //List<int> nextMine = [];
 
+        error("EXPANSION ${stopwatch.elapsedMilliseconds}");
+
         //  Check Time
-        if( stopwatch.elapsedMilliseconds >= rtTime - 30 ) {
-            error("STOPWATCH EXPANSION >> Nb Roll $nbRoll MCTS Done ${stopwatch.elapsedMilliseconds}");
-            error( _ );
+        if( stopwatch.elapsedMilliseconds > rtTime ) {
+            error("EXPAND TIME LIMIT EXCEED ON CALL ${stopwatch.elapsedMilliseconds}");
             return _;
         }
 
@@ -325,11 +311,6 @@ class MCTS
             //  End game discover after kMINE play.
             if( next.over != kNONE )
             {
-                error(">> EXPANSION WITH OVER MINE BEFORE CREATION OF CHILD ${next.over}");
-                error(next);
-                error("NO CHILD ${_.child[i1]}");
-                error("<< ");
-
                 MCTS l = new MCTS()..info = next
                 ..i1 = i1..i2 = i2..playedMine = playedMine..playedOpp = -1..p = _ ;
 
@@ -337,11 +318,6 @@ class MCTS
 
                 //_.child[i1].add( new MCTS()..info = next
                 //..i1 = i1..i2 = i2..playedMine = playedMine..playedOpp = -1..p = _ );
-
-                error(">> EXPANSION WITH OVER MINE");
-                error(_.child[i1]);
-                error(_.child[i1][0]);
-                error("<< ");
             }
             else
             {
@@ -349,15 +325,16 @@ class MCTS
 
                 for( final int playedOpp in nextOpp )
                 {
+                    if( stopwatch.elapsedMilliseconds > rtTime ){
+                        error("EXPAND TIME LIMIT EXCEED NEW STEP ${stopwatch.elapsedMilliseconds}");
+                        return _;
+                    }
+
                     UTTT existing = new UTTT()..cell = next.cell..ttt = next.ttt..over = next.over..rest = next.rest;
                     _.child[i1].add( new MCTS()..info = existing
                     ..i1 = i1..i2 = i2..playedMine = playedMine..playedOpp = playedOpp..p = _ );
 
                     existing.play( playedOpp , kOPP );
-
-                    print(">>>>>> EXPANSION $i1 $i2");
-                    error(_.child[i1][i2]);
-                    print("<<<<<< ");
 
                     i2++;
                 }
@@ -377,7 +354,9 @@ class MCTS
         int playedMine = this.playedMine, playedOpp = this.playedOpp;
         while( roll.over == kNONE )
         {
-            if( stopwatch.elapsedMilliseconds > rtTime ){
+            if( stopwatch.elapsedMilliseconds > rtTime )
+            {
+                error("SIMULATION TIME LIMIT EXCEED ON CALL");
                 break;
             }
 
@@ -419,6 +398,12 @@ class MCTS
     {
         int i1 = this.i1;
         MCTS? _ = this.p;
+
+        if( stopwatch.elapsedMilliseconds > rtTime )
+        {
+            error("BACK PROPAGATION TIME LIMIT EXCEED ON CALL");
+            return;
+        }
 
         if( result == kMINE )
             while( _ != null ) {
@@ -477,7 +462,6 @@ void main() {
     MCTS mcts = new MCTS()..info = uttt;
     int iMine = -1;
 
-    Stopwatch stopwatch = new Stopwatch();
 	stopwatch.start();
 
     int rtTime = kTIME_START;
@@ -489,6 +473,8 @@ void main() {
         int playedOpp = uttt.readConsole();
 		stopwatch.reset();
 
+        error("READ CONSOLE ${stopwatch.elapsedMilliseconds}");
+
         if( iMine != -1 )
             for( final MCTS _ in mcts.child[iMine] )
                 if( _.playedOpp == playedOpp )
@@ -496,8 +482,6 @@ void main() {
                     mcts = _;
                     uttt = _.info;
                     mcts.p = null;
-                    error("Nb Roll $nbRoll MCTS Has been find");
-                    error( mcts );
                     break;
                 }
         else
@@ -507,8 +491,18 @@ void main() {
             mcts.playedOpp = playedOpp;
         }
 
-        error("MCTS Update Opponent");
-        error( mcts );
+        if( console == kDEBUG )
+        {
+            if( mcts.info.over != kNONE )
+            {
+                error("==== GAME OVER ====");
+                error(mcts.info);
+                error("==== GAME OVER ====");
+                return;
+            }
+        }
+
+        error(mcts);
 
         //  Missing link between action and here...
         int i = 0;
@@ -517,51 +511,33 @@ void main() {
             //  Best child
             MCTS _ = mcts.selection( 1.41 );
 
-            error("MCTS LOOP SELECTION $i i1 ${_.i1} w1 ${_.p?.w1[_.i1]} n1 ${_.p?.n1[_.i1]}");
-            error(_);
-
             if( stopwatch.elapsedMilliseconds > rtTime ){
+                error("LOOP SELECTION TIME LIMIT EXCEED AFTER ${stopwatch.elapsedMilliseconds}");
                 break;
             }
 
             _ = _.expansion();
 
-            error("MCTS LOOP EXPANSION $i i1 ${_.i1} w1 ${_.p?.w1[_.i1]} n1 ${_.p?.n1[_.i1]}");
-            error(_);
-
             if( stopwatch.elapsedMilliseconds > rtTime ){
+                error("LOOP EXPANSION TIME LIMIT EXCEED AFTER ${stopwatch.elapsedMilliseconds}");
                 break;
             }
 
             int k = _.simulation();
 
-            error("MCTS LOOP SIMULATION $i i1 ${_.i1} w1 ${_.p?.w1[_.i1]} n1 ${_.p?.n1[_.i1]}");
-            error(k);
-
             if( stopwatch.elapsedMilliseconds > rtTime ){
+                error("SIOMULATION SELECTION TIME LIMIT EXCEED AFTER ${stopwatch.elapsedMilliseconds}");
                 break;
             }
 
             _.backpropagation( k );
 
-            error("MCTS LOOP BACK PROPAGATION $i i1 ${mcts.i1} w1 ${mcts.p?.w1[_.i1]} n1 ${mcts.p?.n1[_.i1]}");
-            error(_);
-
             i++;
         }
 
-        error("Nb Roll $nbRoll MCTS Done ${stopwatch.elapsedMilliseconds}");
-        error( mcts );
-
-        //error("stopwatch ${stopwatch.elapsedMilliseconds} $rtTime");
-        //print('0 0');
-
         double ratioMax = -1, current = -1;
-        error(">>>>> LOOP OVER MCTS : ${kWIN[mcts.info.over]}");
         for( int i = 0 ; i < mcts.w1.length ; i++ )
         {
-            error("iMine : $i LENGTH : ${mcts.child[i].length}");
-            error(mcts.child[i]);
             current = mcts.w1[i] / mcts.n1[i] ;
             if( current > ratioMax )
             {
@@ -569,10 +545,6 @@ void main() {
                 iMine = i;
             }
         }
-
-        //error("stopwatch ${stopwatch.elapsedMilliseconds} $rtTime");
-        error(">>>>> iMine $iMine");
-        error(mcts);
 
         if( console == kDEBUG )
         {
@@ -589,10 +561,8 @@ void main() {
         int yRow = k_.y[ playedMine ];
         int xCol = k_.x[ playedMine ];
 
-        error("${playedMine} >> isMine $iMine : $yRow $xCol ${k_.cellFromYX[yRow][xCol]}");
-        int delay = rtTime > 100 ? kTIME_START : kTIME_TURN ;
-        delay = stopwatch.elapsedMilliseconds - delay;
-        print("$yRow $xCol");
+        error("PLAY >>>>>>");
+        print("$yRow $xCol TIME : ${stopwatch.elapsedMilliseconds}");
 
         if( console == kDEBUG )
         {
@@ -603,8 +573,15 @@ void main() {
             print(mcts.info.validAction(playedMine,kMINE));
         }
 
+        if( stopwatch.elapsedMilliseconds >= rtLimit )
+        {
+            print("TIME LIMIT EXCEED");
+            return;
+        }
+
         stopwatch.reset();
-        rtTime = kTIME_TURN - delay;
+        rtTime = kTIME_TURN;
+        rtLimit = kLIMIT_TURN;
         if( console == kDEBUG )
             rtTime = kTIME_TURN;
 
